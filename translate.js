@@ -1,40 +1,18 @@
 var querystring = require('querystring');
-
 var got = require('got');
-
 var token = require('./token');
 var languages = require('./languages');
 
 function translate(text, opts) {
     opts = opts || {};
 
-    var e;
-    [opts.from, opts.to].forEach(function (lang) {
-        if (lang && !languages.isSupported(lang)) {
-            e = new Error();
-            e.code = 400;
-            e.message = 'The language \'' + lang + '\' is not supported';
-        }
-    });
-    if (e) {
-        return new Promise(function (resolve, reject) {
-            reject(e);
-        });
-    }
-
-    opts.from = opts.from || 'auto';
-    opts.to = opts.to || 'en';
-
-    opts.from = languages.getCode(opts.from);
-    opts.to = languages.getCode(opts.to);
-
-    return token.get(text).then(function (token) {
-        var url = 'https://translate.google.cn/translate_a/single';
+    return token.get(text, opts).then(function (token) {
+        var url = opts.domain + '/translate_a/single';
         var data = {
             client: opts.client || 't',
             sl: opts.from,
             tl: opts.to,
-            hl: opts.to,
+            hl: opts.from,
             dt: ['at', 'bd', 'ex', 'ld', 'md', 'qca', 'rw', 'rm', 'ss', 't'],
             ie: 'UTF-8',
             oe: 'UTF-8',
@@ -47,34 +25,38 @@ function translate(text, opts) {
         data[token.name] = token.value;
         return url + '?' + querystring.stringify(data);
     }).then(function (url) {
-        return got(url).then(function (res) {
+        return got(url, {agent: opts.agent}).then(function (res) {
+            var body = JSON.parse(res.body);
+
             var result = {
-                text: '',
                 from: {
                     language: {
                         didYouMean: false,
                         iso: ''
                     },
+                    corrected: {
+                        corrected: false,
+                        didYouMean: false,
+                        value: ''
+                    },
                     text: {
-                        autoCorrected: false,
+                        array: [],
                         value: '',
-                        didYouMean: false
+                        phonetic: ''
                     }
                 },
-                raw: ''
+                to: {
+                    text: {
+                        array: [],
+                        value: '',
+                        phonetic: ''
+                    },
+                    translations: [],
+                    definitions: []
+                }
             };
 
-            if (opts.raw) {
-                result.raw = res.body;
-            }
-
-            var body = JSON.parse(res.body);
-            body[0].forEach(function (obj) {
-                if (obj[0]) {
-                    result.text += obj[0];
-                }
-            });
-
+            // Language detected
             if (body[2] === body[8][0][0]) {
                 result.from.language.iso = body[2];
             } else {
@@ -82,19 +64,70 @@ function translate(text, opts) {
                 result.from.language.iso = body[8][0][0];
             }
 
-            if (body[7] && body[7][0]) {
-                var str = body[7][0];
+            // Corrected
+            var corrected = body[7] || [];
+            if (corrected[0]) {
+                var str = corrected[0];
 
                 str = str.replace(/<b><i>/g, '[');
                 str = str.replace(/<\/i><\/b>/g, ']');
 
-                result.from.text.value = str;
+                result.from.corrected.value = str;
 
-                if (body[7][5] === true) {
-                    result.from.text.autoCorrected = true;
+                if (corrected[5] === true) {
+                    result.from.corrected.corrected = true;
                 } else {
-                    result.from.text.didYouMean = true;
+                    result.from.corrected.didYouMean = true;
                 }
+            }
+
+            // Result & Standard
+            var indexOfPhonetic = 0;
+            body[0].forEach(function (obj) {
+                if (obj[0]) {
+                    result.to.text.array.push(obj[0]);
+                    result.to.text.value += obj[0];
+                    result.from.text.array.push(obj[1]);
+                    result.from.text.value += obj[1];
+                    indexOfPhonetic++;
+                }
+            });
+
+            var phonetic = body[0][indexOfPhonetic] || [];
+            if (phonetic[3]) {
+                result.from.text.phonetic = phonetic[3];
+            }
+            if (phonetic[2]) {
+                result.to.text.phonetic = phonetic[2];
+            }
+
+            // Definitions
+            if (body[12]) {
+                body[12].forEach(function (obj) {
+                    var partsOfSpeech = obj[0];
+                    obj[1].forEach(function (obj) {
+                        result.to.definitions.push({
+                            partsOfSpeech: partsOfSpeech || '',
+                            value: obj[0] || '',
+                            example: obj[2] || ''
+                        });
+                    });
+                });
+            }
+
+            // Translation Of
+            if (body[1]) {
+                body[1].forEach(function (obj) {
+                    var partsOfSpeech = obj[0];
+                    obj[2].forEach(function (obj) {
+                        result.to.translations.push({
+                            partsOfSpeech: partsOfSpeech || '',
+                            value: obj[0] || '',
+                            synonyms: obj[1] || [],
+                            frequency: obj[3] || 0.0000
+                        });
+                    });
+                });
             }
 
             return result;
@@ -110,4 +143,4 @@ function translate(text, opts) {
     });
 }
 
-module.exports = translate;
+module.exports.translate = translate;

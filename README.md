@@ -1,78 +1,86 @@
 # alfred-google-translate
 [![NPM](https://nodei.co/npm/alfred-google-translate.png)](https://nodei.co/npm/alfred-google-translate/)
 
-## 安装
+### JetBrains' support
 
-*Requires [Node.js](https://nodejs.org) 6+ and the Alfred [Powerpack](https://www.alfredapp.com/powerpack/).*
+[![jetbrain](media/jetbrains.svg)](https://www.jetbrains.com/?from=alfred-google-translate)
 
-- 用npm安装`npm install -g alfred-google-translate`
-- 或者[下载](https://github.com/xfslove/alfred-google-translate/releases/tag/v1.1.3) workflow
+## Installation
 
-## [更新日志](https://github.com/xfslove/alfred-google-translate/releases)
+*Requires the Alfred 3 or 4 [Powerpack](https://www.alfredapp.com/powerpack/), [Node.js](https://nodejs.org) 8+, and the [alfred-language-configuration](https://github.com/xfslove/alfred-language-configuration) workflow.*
 
+To use this workflow you must also install the [alfred-language-configuration](https://github.com/xfslove/alfred-language-configuration) workflow, and configure the language pair. See that [README](https://github.com/xfslove/alfred-language-configuration) for instructions.
 
-## 用法
+### With NPM
+- Install with `npm install -g alfred-google-translate`.
 
-在Alfred中, 输入`tr`, 和想要翻译的关键字, 会查询出关键字的翻译结果和相关（同义）的结果.
+### Manually
+- Or [download the workflow directly](https://github.com/xfslove/alfred-google-translate/releases/tag/v2.0.9).
 
-其中第一项为查询关键字本身，第二项为查询关键字的翻译结果，并带上音标（韦氏音标）.
+## Changelog
+See [all past and current releases](https://github.com/xfslove/alfred-google-translate/releases).
 
-第三项开始为查询关键字的相关（同义）翻译结果.
+## Usage
 
-第一项和第二项：
+Alfred workflow Keyword: `tr [word or sentence]`
+Example: `tr kitchen sink` or `tr Hello, my name is Alfred`
 
-选中其中一个, 按<kbd>enter</kbd>发音.
+When translating a word you will see the translation as well as alternate translations if available.
 
-按住<kbd>cmd</kbd>+<kbd>C</kbd>复制当前项到剪切板.
+With the first two results (which are the input word and the translation) you can…
+- press <kbd>enter</kbd> to read the item.
+- press <kbd>cmd</kbd>+<kbd>C</kbd> to copy the item.
+- press <kbd>shift</kbd> open the translate website.
+- press <kbd>cmd</kbd>+<kbd>L</kbd> to show the translation in large text.
 
-按<kbd>shift</kbd>显示当前项在google翻译官网翻译内容.
+The workflow will attempt to correct spelling mistakes which can be accepted with <kbd>enter</kbd>.
 
-按住<kbd>cmd</kbd>+<kbd>L</kbd>显示完整的当前项的翻译.
+## Environment Variables
 
-第三项以后，会有英译英结果和相关查询结果（近义词）
+| name       | default value                | description                                                  |
+| ---------- | ---------------------------- | ------------------------------------------------------------ |
+| domain     | https://translate.google.com | if you cannot access the default domain, you can config this. <br />大陆访问不了默认域名，所以如果使用2.x版本需要将这个变量设置为https://translate.google.cn. 或者还是使用[1.x版本](https://github.com/xfslove/alfred-google-translate/tree/v1.x) |
+| voice      | remote                       | avaliable values: <br />remote: fetch voice from google, <br />local: use macOS local voice (notice: maybe only works on English),<br />none: dont use voice |
+| save_count | 20                           | limit the translation history, see [alfred-translate-history](https://github.com/xfslove/alfred-translate-history).  <br />a value of 0 will keep no history |
+| socks_proxy| -                            | not turned by default. you can specify local or remote socks proxy. format: `socks://{host}:{port}` example: local shadowsocks proxy 'socks://127.0.0.1:1086' |
 
-选中相关查询结果再按<kbd>enter</kbd>会用当前项查询.
+##### environment variables config snapshot:
 
-如果输入关键字错误, 会有纠错提示, 按<kbd>enter</kbd>会用纠错后的关键字查询.
+![env-config.png](media/env-config.png)
 
-## 设置快捷键
+![env.png](media/env.png)
 
-设置快捷键后，按快捷键可以快速激发workflow，并且会带着按键时选中的字符串.
+## Hotkey
 
-如果是直接安装的workflow，可能快捷键没有设置，可以手动进行设置，设置过程如图: 
+If you download the workflow, you may have to manually set the hotkey yourself.
 
-![hotkey](media/hotkey.gif)
+##### hotkey config snapshot:
 
-使用方法如图:
+![hotkey.png](media/hotkey.png)
+
+![hotkey-config.png](media/hotkey-config.png)
+
+##### hotkey and largetype snapshot:
 
 ![result](media/result.gif)
 
 
 
-## 注意
+## Screenshots
 
-最新版本已经不需要代理了，非常感谢 [@lingyv](https://github.com/lingyv) 的`pull request`.
-
-不需要代理的原理是使用`translate.google.cn`代替了`translate.google.com`，如遇到无法拉取翻译结果的情况，可以考虑更换`DNS`设置。比如更换为`DNSPod`或者`Alibaba`的公共dns
-
-~~由于使用的是google的翻译接口, 在大陆需要**才能使用, 需要电脑上有http代理,~~
-~~然后在该workflow中添加如下两个环境变量~~
-
-## 效果
-
-- 纠错
+  ![](media/detect-lang.png)
 
   ![corrected.png](media/corrected.png)
 
-- 按<kbd>enter</kbd>发音，按<kbd>cmd</kbd>+<kbd>C</kbd>复制结果
+- press <kbd>enter</kbd> to read or <kbd>cmd</kbd>+<kbd>C</kbd> to copy
 
     ![general.png](media/general.png)
 
-- 按<kbd>shift</kbd>打开Google翻译页面
+- press <kbd>shift</kbd> to open the translation website
 
     ![quicklook.png](media/quicklook.png)
 
-- 按<kbd>cmd</kbd>+按<kbd>L</kbd>显示完整翻译结果，如上面快捷键部分gif所示
+- press <kbd>cmd</kbd>+<kbd>L</kbd> to show the translation in large text [like this](#hotkey-and-largetype-snapshot).
 
 ## Related
 

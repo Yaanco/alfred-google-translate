@@ -1,159 +1,240 @@
 "use strict";
-const alfy = require('alfy');
+var alfy = require('alfy');
+var tts = require("./tts");
+var translator = require("./translate");
+var configstore = require('configstore');
+var os = require('os');
+var uuidv4 = require('uuid/v4');
+var languagePair = new configstore('language-config-pair');
+var history = new configstore("translate-history");
+var languages = require("./languages");
+var SocksProxyAgent = require('socks-proxy-agent');
 
-const tts = require("./tts");
-const translate = require("./translate");
+var g_config = {
+    voice: process.env.voice || 'remote',
+    save: process.env.save_count || 20,
+    domain: process.env.domain || 'https://translate.google.com',
+	agent: process.env.socks_proxy ? new SocksProxyAgent(process.env.socks_proxy) : undefined
+};
 
-const os = require('os');
-const fs = require('fs');
-const uuidv4 = require('uuid/v4');
+var pair = languagePair.get('pair');
+if (pair) {
+    // auto
+    var pair0 = pair[0];
+    var pair1 = pair[1];
+    if (pair0 === 'auto' || pair1 === 'auto') {
+        doTranslate({
+            text: alfy.input,
+            from: {
+                language: 'auto',
+                ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3"
+            },
+            to: {
+                language: 'en',
+                ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3"
+            }
+        });
+        return;
+    }
+    // language detect
+    translator
+        .translate(alfy.input, {
+            from: 'auto',
+            to: 'en',
+            domain: g_config.domain,
+            client: 'gtx',
+			agent: g_config.agent
+        })
+        .then(function (res) {
+            var detect = res.from.language.iso;
+            var from = 'auto';
+            var to = 'en';
+            if (pair0 === detect) {
+                from = pair0;
+                to = pair1;
+            } else if (pair1 === detect) {
+                from = pair1;
+                to = pair0;
+            }
 
-const q = alfy.input;
+            doTranslate({
+                text: alfy.input,
+                from: {
+                    language: from,
+                    ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3"
+                },
+                to: {
+                    language: to,
+                    ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3"
+                }
+            });
+        });
 
-// 简单正则，只要包含一个就是中文
-const isChinese = /[\u4E00-\u9FA5\uF900-\uFA2D]/;
-var data = {
-  from: {
-    lang: isChinese.test(q) ? 'zh-CN' : 'en',
-    ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3",
-    text: [],
-    standard: ''
-  },
-  to: {
-    lang: isChinese.test(q) ? 'en' : 'zh-CN',
-    ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3",
-    text: [],
-    standard: ''
-  }
-}
-//文档上说cmd+L时会找largetype，找不到会找arg，但是实际并不生效。
-//同时下一步的发音模块中query变量的值为arg的值。
-translate(q, { raw: true, from: data.from.lang, to: data.to.lang })
-.then(res => {
-  var items = [];
-  
-  if (res.from.text.autoCorrected) {
-    
-    const corrected = res.from.text.value
-    .replace(/\[/, "")
-    .replace(/\]/, "");
-    
-    // 纠错的内容
-    items.push({
-      title: res.text,
-      subtitle: `您要查询的是 ${corrected} 吗?`,
-      autocomplete: corrected
-    });
-    
-  } else {
-  
-    const rawObj = JSON.parse(res.raw);
-  
-    const translation = rawObj[0];
-    var indexOfStandard = 0;
-    translation.forEach(obj => {
-        if (obj[0]) {
-          data.from.text.push(obj[1]);
-          data.to.text.push(obj[0]);
-          indexOfStandard++;
+} else {
+    // manual
+    var source = languagePair.get('source');
+    var target = languagePair.get('target');
+    var from = 'auto';
+    var to = 'en';
+    if (source && target) {
+        from = source;
+        to = target;
+    }
+
+    doTranslate({
+        text: alfy.input,
+        from: {
+            language: from,
+            ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3"
+        },
+        to: {
+            language: to,
+            ttsfile: os.tmpdir() + '/' + uuidv4() + ".mp3"
         }
     });
-    const standard = rawObj[0][indexOfStandard];
-    
-    data.from.standard = rawObj[0][indexOfStandard][3];
-    data.to.standard = rawObj[0][indexOfStandard][2];
+}
 
-    // 查询的内容
-    items.push({
-      title: data.from.text.join(' '),
-      subtitle: data.from.standard ? data.from.standard : '',
-      quicklookurl: `https://translate.google.cn/#view=home&op=translate&sl=${data.from.lang}&tl=${data.to.lang}&text=${encodeURIComponent(data.from.text)}`,
-      arg: data.from.ttsfile,
-      text: {
-        copy: data.from.text.join(' '),
-        largetype: data.from.text.join(' ')
-      },
-      icon: {
-        path: 'tts.png'
-      }
-    });
-  
-    // 翻译的内容
-    items.push({
-      title: data.to.text.join(' '),
-      subtitle: data.to.standard ? data.to.standard : '',
-      quicklookurl: `https://translate.google.cn/#view=home&op=translate&sl=${data.to.lang}&tl=${data.from.lang}&text=${encodeURIComponent(data.to.text)}`,
-      arg: data.to.ttsfile,
-      text: {
-        copy: data.to.text.join(' '),
-        largetype: data.to.text.join(' ')
-      },
-      icon: {
-        path: 'tts.png'
-      }
-    });
+function doTranslate(opts) {
+    //文档上说cmd+L时会找largetype，找不到会找arg，但是实际并不生效。
+    //同时下一步的发音模块中query变量的值为arg的值。
+    translator
+        .translate(opts.text, {
+            from: opts.from.language,
+            to: opts.to.language,
+            domain: g_config.domain,
+            client: 'gtx',
+     		agent: g_config.agent
+        })
+        .then(function (res) {
+            var items = [];
 
-    //英文定义, 英译英
-    if (rawObj[12]) {
-      rawObj[12].forEach(obj => {
-        const partOfSpeech = obj[0];
-        obj[1].forEach(m => {
-          const [explain, nvl, example] = m;
-          items.push({
-            title: explain,
-            subtitle: `英文解释 ${partOfSpeech} 示例: ${example ? example : "无"}`,
-            quicklookurl: `https://translate.google.cn/#view=home&op=translate&sl=${data.from.lang}&tl=${data.to.lang}&text=${encodeURIComponent(data.from.text)}`,
-            text: {
-              copy: explain,
-              largetype: `${explain}\n\"${example ? example : ""}\"`
+            if ('auto' === opts.from.language || res.from.language.didYouMean) {
+                // Detected the input language not in configuration
+                items.push({
+                    title: res.to.text.value,
+                    subtitle: `Detected the input language is ${languages[res.from.language.iso]}, not one of your configuration.`
+                });
+
+            } else if (res.from.corrected.corrected || res.from.corrected.didYouMean) {
+
+                var corrected = res.from.corrected.value
+                    .replace(/\[/, "")
+                    .replace(/\]/, "");
+
+                // Correct
+                items.push({
+                    title: res.to.text.value,
+                    subtitle: `Show translation for ${corrected}?`,
+                    autocomplete: corrected
+                });
+
+            } else {
+
+                var fromPhonetic = res.from.text.phonetic;
+                var fromText = res.from.text.value;
+                var fromArg = g_config.voice === 'remote' ? opts.from.ttsfile : g_config.voice === 'local' ? fromText : '';
+                // Input
+                items.push({
+                    title: fromText,
+                    subtitle: `Phonetic: ${fromPhonetic}`,
+                    quicklookurl: `${g_config.domain}/#view=home&op=translate&sl=${opts.from.language}&tl=${opts.to.language}&text=${encodeURIComponent(fromText)}`,
+                    arg: fromArg,
+                    text: {
+                        copy: fromText,
+                        largetype: fromText
+                    },
+                    icon: {
+                        path: g_config.voice === 'none' ? 'icon.png' : 'tts.png'
+                    }
+                });
+
+                var toPhonetic = res.to.text.phonetic;
+                var toText = res.to.text.value;
+                var toArg = g_config.voice === 'remote' ? opts.to.ttsfile : g_config.voice === 'local' ? toText : '';
+                // Translation
+                items.push({
+                    title: toText,
+                    subtitle: `Phonetic: ${toPhonetic}`,
+                    quicklookurl: `${g_config.domain}/#view=home&op=translate&sl=${opts.to.language}&tl=${opts.from.language}&text=${encodeURIComponent(toText)}`,
+                    arg: toArg,
+                    text: {
+                        copy: toText,
+                        largetype: toText
+                    },
+                    icon: {
+                        path: g_config.voice === 'none' ? 'icon.png' : 'tts.png'
+                    }
+                });
+
+                // Definitions
+                res.to.definitions.forEach(definition => {
+                    items.push({
+                        title: `Definition[${definition.partsOfSpeech}]: ${definition.value}`,
+                        subtitle: `Example: ${definition.example}`,
+                        text: {
+                            copy: definition.value,
+                            largetype: `Definition: ${definition.value}\n\nExample: ${definition.example}`
+                        }
+                    });
+                });
+
+                // Translation Of
+                res.to.translations.forEach(translation => {
+                    items.push({
+                        title: `Translation[${translation.partsOfSpeech}]: ${translation.value}`,
+                        subtitle: `Frequency: ${translation.frequency.toFixed(4)} Synonyms: ${translation.synonyms}`,
+                        text: {
+                            copy: translation.value,
+                            largetype: `Translation: ${translation.value}\n\nSynonyms: ${translation.synonyms}`
+                        }
+                    });
+                });
             }
-          });
-        });
-      });
-    }
 
-    // 相关de翻译内容
-    if (rawObj[1]) {
-      rawObj[1].forEach(obj => {
-        const partOfSpeech = obj[0];
-        obj[2].forEach(x => {
-          const [text, relation, nvl, rate] = x;
-          items.push({
-            title: text,
-            subtitle: `频率: ${rate?rate.toFixed(4):"0.0000"} ${partOfSpeech} 同义词: ${relation ? relation.join(", ") : "无"}`,
-            autocomplete: text
-          });
-        });
-      });
-    }
-  }
-  
-  alfy.output(items);
-})
-.then(function() {
-  // 获取发音
-  createtts(data.from.text.reverse(), data.from.lang, data.from.ttsfile, true);
-  createtts(data.to.text.reverse(), data.to.lang, data.to.ttsfile, true);
-})
-.catch(err => {
-  console.log(err);
-});
+            alfy.output(items);
 
-function createtts(data, lang, file, create) {
-  var text = data.pop();
-  if (!text) return;
-  tts(text, { to: lang })
-  .then(buffer => {
-    if (create) {
-      fs.writeFile(file, buffer, function(err) {
-        if (err) throw err;
-        createtts(data, lang, file, false);
-      });
-    } else {
-      fs.appendFile(file, buffer, function(err) {
-        if (err) throw err;
-        createtts(data, lang, file, false);
-      });
-    }
-  });
+            res.from.language.ttsfile = opts.from.ttsfile;
+            res.to.language = {iso: opts.to.language, ttsfile: opts.to.ttsfile};
+            return res;
+        })
+        .then(res => {
+            // history, todo: could be optimized
+            if (g_config.save > 0) {
+                var value = {
+                    time: Date.now(),
+                    from: res.from.text.value,
+                    to: res.to.text.value
+                };
+                var histories = history.get('history') ? JSON.parse(history.get('history')) : [];
+                if (histories.length >= g_config.save) histories.shift();
+                histories.push(value);
+                history.set('history', JSON.stringify(histories));
+            }
+
+            return res;
+        })
+        .then(res => {
+            // tts
+            if (g_config.voice === 'remote') {
+                var fromArray = [];
+                res.from.text.array.forEach(o => tts.split(o).forEach(t => fromArray.push(t)));
+                tts.multi(fromArray, {
+                    to: res.from.language.iso,
+                    domain: g_config.domain,
+                    file: res.from.language.ttsfile,
+                    client: 'gtx',
+					agent: g_config.agent
+                });
+                var toArray = [];
+                res.to.text.array.forEach(o => tts.split(o).forEach(t => toArray.push(t)));
+                tts.multi(toArray, {
+                    to: res.to.language.iso,
+                    domain: g_config.domain,
+                    file: res.to.language.ttsfile,
+                    client: 'gtx',
+					agent: g_config.agent
+                });
+            }
+        })
+    ;
 }
